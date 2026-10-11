@@ -65,6 +65,7 @@ def solve(src, dst, stop_at_dst=True):
             visited=set(range(k + 1)) if k is not None else set(),
             dist=[int(x) if x < INF else INF for x in D[s]], prev=None,
             D=D.copy(), P=P.copy(), changed=changed, lines=lines,
+            rows=None, band=(k, k) if k is not None else None, fixed=None, mode="floyd",
             evaluated=tot["eval"], improved=tot["imp"]))
 
     snap("init", None, "Matrices iniciales  (D⁰ distancias · P⁰ recorridos)", frozenset(), [])

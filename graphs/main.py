@@ -156,6 +156,16 @@ class MatrixView(tk.Frame):
         self.ys.set(a, b)
         self.rowh.yview_moveto(a)
 
+    def _resize(self, rows, cols, hw):
+        """Ajusta cabeceras y zona de scroll cuando cambia el tamaño de la tabla."""
+        self.rows, self.cols, self.HW = rows, cols, hw
+        nr, nc = self.M.shape
+        W, H = nc * self.CW, nr * self.CH
+        self.corner.config(width=hw)
+        self.rowh.config(width=hw, scrollregion=(0, 0, hw, H))
+        self.colh.config(scrollregion=(0, 0, W, self.CH))
+        self.body.config(scrollregion=(0, 0, W, H))
+
     # --- textos ---
     def _reset_info(self):
         if self.kind == "adj":
@@ -257,23 +267,45 @@ class MatrixView(tk.Frame):
                                    outline=ACCENT, tags="hover")
 
 
-class FloydView(MatrixView):
-    """Matriz de distancias (D) o de recorridos (P) de Warshall-Floyd,
-    una foto por iteración. Banda ámbar = fila y columna del pivote ·
-    verde = celdas que mejoraron en esa iteración."""
+class TableView(MatrixView):
+    """Matriz de distancias (D) o de recorridos (P) que cambia paso a paso.
+    • modo "floyd": matriz cuadrada, una foto por iteración (Warshall-Floyd).
+      Banda ámbar = fila y columna del pivote.
+    • modo "steps": una fila por iteración (Dijkstra); fila = nodo visitado.
+      Banda ámbar = fila actual y columna del nodo visitado.
+    Verde = celdas que cambiaron en esa iteración."""
     ROUNDED = False
 
     def __init__(self, master, kind):
-        self.pivot, self.changed, self.focus = None, frozenset(), None
+        self.mode, self.band, self.fixed = "floyd", None, None
+        self.changed, self.focus = frozenset(), None
         names = [str(n) for n in NODES]
         super().__init__(master, np.zeros((len(NODES), len(NODES))), names, names, kind)
 
-    def show(self, M, pivot, changed, focus):
-        self.M, self.pivot, self.changed, self.focus = M, pivot, changed, focus
+    def show(self, f, focus):
+        """f = frame del algoritmo (trae D, P, rows, band, changed, fixed, mode)."""
+        self.mode, self.band, self.fixed = f["mode"], f["band"], f["fixed"]
+        self.changed, self.focus = f["changed"], focus
+        self.M = f["D"] if self.kind == "dist" else f["P"]
+        rows = f["rows"] or [str(n) for n in NODES]
+        hw = 78 if self.mode == "steps" else 52
+        if rows != self.rows or hw != self.HW or self.M.shape != self._last_shape:
+            self._resize(rows, self.cols, hw)
+        self._last_shape = self.M.shape
+        self._reset_info()
         self.draw()
 
+    _last_shape = None
+
     def _reset_info(self):
-        if self.kind == "dist":
+        d = self.kind == "dist"
+        if self.mode == "steps":
+            self.info.config(text=(
+                "Fila = iteración (nodo visitado) · distancia conocida desde el inicio · "
+                "verde fuerte = definitiva · verde = mejoró · banda ámbar = nodo visitado" if d else
+                "Fila = iteración (nodo visitado) · nodo anterior en el mejor camino (—: ninguno) · "
+                "verde fuerte = definitivo · verde = cambió · banda ámbar = visitado"))
+        elif d:
             self.info.config(text="D = distancias mínimas conocidas · null = diagonal · ∞ = aún sin "
                                   "camino · verde = mejoró en esta iteración · banda ámbar = pivote")
         else:
@@ -283,6 +315,16 @@ class FloydView(MatrixView):
     def _describe(self, r_, c_):
         a, b, v = self.rows[r_], self.cols[c_], self.M[r_, c_]
         extra = "  ·  mejoró en esta iteración" if (r_, c_) in self.changed else ""
+        if self.mode == "steps":
+            extra = "  ·  cambió en esta fila" if (r_, c_) in self.changed else ""
+            if np.isnan(v):
+                return f"Iteración {a}  ·  todavía no se ejecuta"
+            perm = "  ·  definitiva" if (self.fixed and r_ >= self.fixed[c_]) else ""
+            if self.kind == "dist":
+                return (f"d({b}) tras la iteración {a} = " + ("∞" if v == INF else str(int(v)))
+                        + perm + extra)
+            return (f"anterior de {b} tras la iteración {a} = "
+                    + ("ninguno" if v < 0 else str(NODES[int(v)])) + perm + extra)
         if self.kind == "dist":
             if r_ == c_:
                 return f"D[{a}][{b}]  ·  diagonal (null)"
@@ -300,8 +342,24 @@ class FloydView(MatrixView):
 
     def cell(self, r_, c_):
         v = self.M[r_, c_]
-        band = self.pivot is not None and (r_ == self.pivot or c_ == self.pivot)
-        base = mix(SURF, AMBER, .16) if band else None
+        br, bc = self.band if self.band else (None, None)
+        base = mix(SURF, AMBER, .16) if (r_ == br or c_ == bc) else None
+        if self.mode == "steps":
+            if np.isnan(v):
+                return "", None, DIM, False
+            if self.kind == "dist":
+                text = "∞" if v == INF else str(int(v))
+            else:
+                text = "—" if v < 0 else str(NODES[int(v)])
+            perm = bool(self.fixed) and r_ >= self.fixed[c_]
+            if text in ("∞", "—"):
+                fill, fg, bold = base, DIM, False
+            else:
+                fill = mix(base or SURF, ACCENT, .34) if perm else base
+                fg, bold = INK, perm
+            if (r_, c_) in self.changed:
+                fill, fg, bold = ACCENT, "white", True
+            return text, fill, fg, bold
         if self.kind == "dist":
             if r_ == c_:
                 text, fill, fg, bold = "null", base, DIM, False
@@ -400,9 +458,9 @@ class App(tk.Tk):
         self.incv = MatrixView(stack, INC, names,
                                [f"e{i + 1}" for i in range(len(EDGES))], "inc")
         self.pages["inc"] = self.incv
-        self.distv = FloydView(stack, "dist")          # solo se muestran con Warshall-Floyd
+        self.distv = TableView(stack, "dist")          # tablas D y P (ambos algoritmos)
         self.pages["dist"] = self.distv
-        self.pathv = FloydView(stack, "path")
+        self.pathv = TableView(stack, "path")
         self.pages["path"] = self.pathv
 
         logf = tk.Frame(stack, bg=SURF)
@@ -606,9 +664,14 @@ class App(tk.Tk):
             self.update_log()
         elif key in ("dist", "path") and self.algo.HAS_MATRICES and self.frames:
             f = self.frames[max(self.k, 0)]
-            focus = (IDX[self.src], IDX[self.dst]) if self.done else None
-            view, mat = (self.distv, "D") if key == "dist" else (self.pathv, "P")
-            view.show(f[mat], f["k"], f["changed"], focus)
+            if self.k < 0 and f["mode"] == "steps":          # antes de empezar: tabla vacía
+                f = dict(f, D=np.full_like(f["D"], np.nan), P=np.full_like(f["P"], np.nan),
+                         band=None, changed=frozenset())
+            focus = None
+            if self.done:
+                focus = ((f["D"].shape[0] - 1, IDX[self.dst]) if f["mode"] == "steps"
+                         else (IDX[self.src], IDX[self.dst]))
+            (self.distv if key == "dist" else self.pathv).show(f, focus)
         self._dirty[key] = False
 
     # ---------- exportar cada paso como imagen ----------

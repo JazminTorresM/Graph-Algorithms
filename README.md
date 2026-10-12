@@ -65,8 +65,5 @@ Graph-Algorithms/
 
 <div align="center">
 
-✧˖°. hecho entre dos, con mucho pizarrón y mucha menta .°˖✧
-
-🌿 🍃 🌱 🍃 🌿
 
 </div>

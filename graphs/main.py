@@ -114,15 +114,18 @@ class MatrixView(tk.Frame):
         nr, nc = M.shape
         W, H = nc * self.CW, nr * self.CH
 
-        self.info = tk.Label(self, bg=SURF, fg=MUTED, anchor="w", font=(FONT, 10))
-        self.info.grid(row=0, column=0, columnspan=3, sticky="ew", padx=22, pady=(16, 10))
+        self.info = tk.Label(self, bg=SURF, fg=MUTED, anchor="nw", justify="left",
+                             font=(FONT, 9), width=1, height=2)
+        self.info.grid(row=0, column=0, columnspan=3, sticky="ew", padx=14, pady=(2, 6))
+        self.info.bind("<Configure>",
+                       lambda e: self.info.config(wraplength=max(120, e.width - 4)))
         self.corner = tk.Canvas(self, width=self.HW, height=self.CH, bg=SURF,
                                 highlightthickness=0)
-        self.colh = tk.Canvas(self, height=self.CH, bg=SURF, highlightthickness=0,
+        self.colh = tk.Canvas(self, width=10, height=self.CH, bg=SURF, highlightthickness=0,
                               scrollregion=(0, 0, W, self.CH))
-        self.rowh = tk.Canvas(self, width=self.HW, bg=SURF, highlightthickness=0,
+        self.rowh = tk.Canvas(self, width=self.HW, height=10, bg=SURF, highlightthickness=0,
                               scrollregion=(0, 0, self.HW, H))
-        self.body = tk.Canvas(self, bg=SURF, highlightthickness=0,
+        self.body = tk.Canvas(self, width=10, height=10, bg=SURF, highlightthickness=0,
                               scrollregion=(0, 0, W, H),
                               xscrollincrement=self.CW, yscrollincrement=self.CH,
                               xscrollcommand=self._xset, yscrollcommand=self._yset)
@@ -392,8 +395,8 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Caminos mínimos · Grafo")
-        self.geometry("1400x860")
-        self.minsize(1200, 720)
+        self.geometry("1500x900")
+        self.minsize(1280, 760)
         self.configure(bg=BG)
 
         self.algo = ALGORITHMS[0]
@@ -408,8 +411,6 @@ class App(tk.Tk):
         self.hover = None
         self.popup = None
         self._popup_born = 0.0
-        self.tab = "graph"
-        self._dirty = {}
         self.f_msg = tkfont.Font(family=FONT, size=10)
         self.f_tab = tkfont.Font(family=FONT, size=10)
         self.f_btn = tkfont.Font(family=FONT, size=10, weight="bold")
@@ -440,45 +441,75 @@ class App(tk.Tk):
         self.head.grid(row=0, column=0, sticky="ew")
         self.head.bind("<Configure>", lambda e: self.draw_head())
 
+        # ── tablero: todo visible a la vez ──────────────────────────
+        #   ┌──────────── grafo ────────────┬──── pasos ────┐
+        #   ├── distancias D ──┬── recorridos P ──┼── matrices ──┤
         stack = tk.Frame(self, bg=BG)
-        stack.grid(row=1, column=0, sticky="nsew", padx=28)
-        stack.grid_rowconfigure(0, weight=1)
+        stack.grid(row=1, column=0, sticky="nsew", padx=24, pady=(0, 4))
         stack.grid_columnconfigure(0, weight=1)
+        stack.grid_columnconfigure(1, weight=0, minsize=410)
+        stack.grid_rowconfigure(0, weight=5, uniform="r")
+        stack.grid_rowconfigure(1, weight=3, uniform="r")
 
         self.dock = tk.Canvas(self, height=96, bg=BG, highlightthickness=0)
         self.dock.grid(row=2, column=0, sticky="ew")
         self.dock.bind("<Configure>", lambda e: self.draw_dock())
 
         names = [str(n) for n in NODES]
-        self.pages = {}
-        self.gc = tk.Canvas(stack, bg=BG, highlightthickness=0)
-        self.pages["graph"] = self.gc
-        self.adjv = MatrixView(stack, ADJ, names, names, "adj")
-        self.pages["adj"] = self.adjv
-        self.incv = MatrixView(stack, INC, names,
-                               [f"e{i + 1}" for i in range(len(EDGES))], "inc")
-        self.pages["inc"] = self.incv
-        self.distv = TableView(stack, "dist")          # tablas D y P (ambos algoritmos)
-        self.pages["dist"] = self.distv
-        self.pathv = TableView(stack, "path")
-        self.pages["path"] = self.pathv
 
-        logf = tk.Frame(stack, bg=SURF)
-        self.log = tk.Text(logf, bg=SURF, fg=INK, bd=0, padx=26, pady=22,
-                           font=(MONO, 10), wrap="none", highlightthickness=0,
-                           spacing1=3, cursor="arrow")
-        sb = ttk.Scrollbar(logf, command=self.log.yview)
+        # grafo (arriba izquierda)
+        self.gc = tk.Canvas(stack, width=10, height=10, bg=BG, highlightthickness=0)
+        self.gc.grid(row=0, column=0, sticky="nsew", padx=(0, 12), pady=(0, 12))
+
+        # tablas D y P (abajo izquierda)
+        self.tables = tk.Frame(stack, bg=BG)
+        self.tables.grid(row=1, column=0, sticky="nsew", padx=(0, 12))
+        self.tables.grid_rowconfigure(0, weight=1)
+        for c_ in (0, 1):
+            self.tables.grid_columnconfigure(c_, weight=1, uniform="t")
+        _, body = self._card(self.tables, "DISTANCIAS · D")
+        body.master.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+        self.distv = TableView(body, "dist")
+        self.distv.pack(fill="both", expand=True)
+        _, body = self._card(self.tables, "RECORRIDOS · P")
+        body.master.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
+        self.pathv = TableView(body, "path")
+        self.pathv.pack(fill="both", expand=True)
+
+        # pasos (arriba derecha)
+        card, body = self._card(stack, "PASOS")
+        card.grid(row=0, column=1, sticky="nsew", pady=(0, 12))
+        self.log = tk.Text(body, width=1, height=1, bg=SURF, fg=INK, bd=0, padx=16, pady=6,
+                           font=(MONO, 9), wrap="word", highlightthickness=0,
+                           spacing1=2, cursor="arrow")
+        sb = ttk.Scrollbar(body, command=self.log.yview)
         self.log.configure(yscrollcommand=sb.set)
         sb.pack(side="right", fill="y")
         self.log.pack(fill="both", expand=True)
         for tag, col in (("visit", AMBER_D), ("ok", ACCENT_D), ("no", DIM),
                          ("end", ACCENT_D), ("head", MUTED), ("num", DIM)):
             self.log.tag_config(tag, foreground=col)
-        self.log.tag_config("big", foreground=INK, font=(MONO, 11, "bold"))
-        self.pages["log"] = logf
+        self.log.tag_config("big", foreground=INK, font=(MONO, 10, "bold"))
 
-        for p in self.pages.values():
-            p.grid(row=0, column=0, sticky="nsew")
+        # matrices del grafo (abajo derecha): adyacencia / incidencia
+        card, body = self._card(stack, "MATRIZ DEL GRAFO")
+        card.grid(row=1, column=1, sticky="nsew")
+        self.adjv = MatrixView(body, ADJ, names, names, "adj")
+        self.incv = MatrixView(body, INC, names,
+                               [f"e{i + 1}" for i in range(len(EDGES))], "inc")
+        for v in (self.adjv, self.incv):
+            v.grid(row=0, column=0, sticky="nsew")
+        body.grid_rowconfigure(0, weight=1)
+        body.grid_columnconfigure(0, weight=1)
+        self.mat_tabs = {}
+        for key, label in (("inc", "Incidencia"), ("adj", "Adyacencia")):
+            t = tk.Label(card.hdr, text=label, bg=SURF, fg=MUTED, cursor="hand2",
+                         font=(FONT, 9))
+            t.pack(side="right", padx=(0, 12))
+            t.bind("<Button-1>", lambda e, k=key: self.show_matrix(k))
+            self.mat_tabs[key] = t
+        self.show_matrix("adj")
+
         self.gc.bind("<Configure>", self._on_gc_resize)
         self.gc.bind("<Motion>", self._on_gc_motion)
         self.gc.bind("<Button-1>", self._on_gc_click)
@@ -493,20 +524,25 @@ class App(tk.Tk):
         self.bind("<End>", lambda e: self.to_end())
         self.bind("<Button-1>", self._maybe_close_popup, add="+")
         self.bind("<Escape>", lambda e: self.close_popup())
-        self.show_tab("graph")
 
-    def tabs(self):
-        """Pestañas visibles según el algoritmo activo."""
-        t = [("graph", "Grafo"), ("adj", "Adyacencia"), ("inc", "Incidencia")]
-        if self.algo.HAS_MATRICES:
-            t += [("dist", "Distancias"), ("path", "Recorridos")]
-        return t + [("log", "Pasos")]
+    def _card(self, parent, title):
+        """Tarjeta blanca con título. Devuelve (tarjeta, cuerpo); card.hdr es la
+        franja del título (sirve para añadir controles a la derecha)."""
+        card = tk.Frame(parent, bg=SURF)
+        card.hdr = tk.Frame(card, bg=SURF)
+        card.hdr.pack(fill="x", padx=(16, 0), pady=(12, 4))
+        tk.Label(card.hdr, text=title, bg=SURF, fg=MUTED,
+                 font=(FONT, 8, "bold")).pack(side="left")
+        body = tk.Frame(card, bg=SURF)
+        body.pack(fill="both", expand=True, padx=(0, 4), pady=(0, 6))
+        return card, body
 
-    def show_tab(self, key):
-        self.tab = key
-        tk.Misc.tkraise(self.pages[key])
-        self.draw_head()
-        self._flush()
+    def show_matrix(self, key):
+        """Alterna Adyacencia / Incidencia en la tarjeta inferior derecha."""
+        tk.Misc.tkraise(self.adjv if key == "adj" else self.incv)
+        for k, t in self.mat_tabs.items():
+            t.config(fg=INK if k == key else MUTED,
+                     font=(FONT, 9, "bold" if k == key else "normal"))
 
     def set_algo(self, mod):
         if mod is self.algo:
@@ -514,9 +550,10 @@ class App(tk.Tk):
         self.close_popup()
         self.playing = False
         self.algo = mod
-        if self.tab not in [k for k, _ in self.tabs()]:
-            self.tab = "graph"
-            tk.Misc.tkraise(self.pages["graph"])
+        if mod.HAS_MATRICES:
+            self.tables.grid()
+        else:
+            self.tables.grid_remove()
         self.run()
         self.draw_head()
 
@@ -527,24 +564,6 @@ class App(tk.Tk):
         W = max(c.winfo_width(), 800)
         c.create_oval(30, 29, 42, 41, fill=ACCENT, outline="")
         c.create_text(54, 35, text="Caminos mínimos", anchor="w", fill=INK, font=self.f_brand)
-        x = 54 + self.f_brand.measure("Caminos mínimos") + 40
-        f = self.f_tab
-        for key, label in self.tabs():
-            w = f.measure(label)
-            tag = f"tab_{key}"
-            active = key == self.tab
-            c.create_text(x, 35, text=label, anchor="w", font=f,
-                          fill=INK if active else MUTED, tags=(tag, tag + "_t"))
-            if active:
-                c.create_line(x, 54, x + w, 54, fill=ACCENT, width=2, capstyle="round")
-            c.create_rectangle(x - 10, 16, x + w + 10, 58, fill="", outline="", tags=(tag,))
-            c.tag_bind(tag, "<Button-1>", lambda e, k=key: self.show_tab(k))
-            if not active:
-                c.tag_bind(tag, "<Enter>", lambda e, t=tag: (
-                    c.itemconfig(t + "_t", fill=INK), c.config(cursor="hand2")))
-                c.tag_bind(tag, "<Leave>", lambda e, t=tag: (
-                    c.itemconfig(t + "_t", fill=MUTED), c.config(cursor="")))
-            x += w + 26
         # exportar
         lab = "Exportar imágenes"
         w = self.f_btn.measure(lab) + 36
@@ -652,17 +671,12 @@ class App(tk.Tk):
                         break
         self.adjv.set_marks(adj)
         self.incv.set_marks(inc)
-        self._dirty = {"log": True, "dist": True, "path": True}
         self._flush()
 
     def _flush(self):
-        """Actualiza solo la pestaña visible (las demás se ponen al día al abrirlas)."""
-        key = self.tab
-        if not self._dirty.get(key):
-            return
-        if key == "log":
-            self.update_log()
-        elif key in ("dist", "path") and self.algo.HAS_MATRICES and self.frames:
+        """Actualiza los paneles que cambian en cada paso: pasos y tablas D / P."""
+        self.update_log()
+        if self.algo.HAS_MATRICES and self.frames:
             f = self.frames[max(self.k, 0)]
             if self.k < 0 and f["mode"] == "steps":          # antes de empezar: tabla vacía
                 f = dict(f, D=np.full_like(f["D"], np.nan), P=np.full_like(f["P"], np.nan),
@@ -671,8 +685,8 @@ class App(tk.Tk):
             if self.done:
                 focus = ((f["D"].shape[0] - 1, IDX[self.dst]) if f["mode"] == "steps"
                          else (IDX[self.src], IDX[self.dst]))
-            (self.distv if key == "dist" else self.pathv).show(f, focus)
-        self._dirty[key] = False
+            self.distv.show(f, focus)
+            self.pathv.show(f, focus)
 
     # ---------- exportar cada paso como imagen ----------
     def _grab(self):
@@ -697,8 +711,7 @@ class App(tk.Tk):
         os.makedirs(out, exist_ok=True)
         self.close_popup()
         self.playing = False
-        old_k, old_tab = self.k, self.tab
-        self.show_tab("graph")
+        old_k = self.k
         self.attributes("-topmost", True)
         self.lift()
         self.update()
@@ -715,7 +728,6 @@ class App(tk.Tk):
             self.attributes("-topmost", False)
             self.title("Caminos mínimos · Grafo")
             self.k = old_k
-            self.show_tab(old_tab)
             self.refresh()
         messagebox.showinfo("Listo", f"Se guardaron {n} imágenes en:\n{out}")
 
@@ -787,7 +799,7 @@ class App(tk.Tk):
         xs = [p[0] for p in POS.values()]
         ys = [p[1] for p in POS.values()]
         wx, wy = max(xs) - min(xs), max(ys) - min(ys)
-        top, bottom, side = 128, 104, 72
+        top, bottom, side = 84, 70, 44
         aw, ah = self.cw - 2 * side, self.ch - top - bottom
         self.scale = max(40, min(aw / wx, ah / wy))
         ox = (self.cw - wx * self.scale) / 2
@@ -808,20 +820,20 @@ class App(tk.Tk):
         items = [("Inicio", ACCENT, "fill"), ("Fin", INK, "fill"),
                  ("Actual", AMBER, "ring"), ("Visitado", ACCENT, "ring"),
                  ("Camino", ACCENT, "line")]
-        x = 40
+        x, ly = 28, h - 22
         for label, col, shape in items:
             if shape == "fill":
-                c.create_oval(x, h - 38, x + 10, h - 28, fill=col, outline="", tags="bg")
+                c.create_oval(x, ly - 5, x + 10, ly + 5, fill=col, outline="", tags="bg")
             elif shape == "ring":
-                c.create_oval(x, h - 38, x + 10, h - 28, fill=SURF, outline=col,
+                c.create_oval(x, ly - 5, x + 10, ly + 5, fill=SURF, outline=col,
                               width=2, tags="bg")
             else:
-                c.create_line(x - 2, h - 33, x + 12, h - 33, fill=col, width=3,
+                c.create_line(x - 2, ly, x + 12, ly, fill=col, width=3,
                               capstyle="round", tags="bg")
-            c.create_text(x + 18, h - 33, text=label, anchor="w", fill=MUTED,
+            c.create_text(x + 18, ly, text=label, anchor="w", fill=MUTED,
                           font=(FONT, 9), tags="bg")
             x += 18 + self.f_leg.measure(label) + 24
-        c.create_text(w - 40, h - 33, anchor="e", fill=DIM, font=(FONT, 9), tags="bg",
+        c.create_text(w - 28, ly, anchor="e", fill=DIM, font=(FONT, 9), tags="bg",
                       text="clic: inicio   ·   clic derecho: fin")
         c.tag_lower("bg")
 
@@ -849,7 +861,7 @@ class App(tk.Tk):
                 if p is not None and v in visited}
 
         # encabezado: ruta, camino y estadísticas
-        c.create_text(40, 36, anchor="nw", fill=INK, font=(FONT, 24, "bold"),
+        c.create_text(28, 16, anchor="nw", fill=INK, font=(FONT, 18, "bold"),
                       text=f"{self.src}  →  {self.dst}", tags="graph")
         if done and self.path:
             sub = (f"distancia {self.total}   ·   "
@@ -860,16 +872,18 @@ class App(tk.Tk):
             sub = f"{self.algo.NAME}  ·  en proceso…"
         else:
             sub = f"{self.algo.NAME}  ·  pulsa reproducir para comenzar"
-        c.create_text(42, 80, anchor="nw", fill=MUTED, font=(FONT, 10),
+        if len(sub) > 70:
+            sub = sub[:67] + "…"
+        c.create_text(30, 50, anchor="nw", fill=MUTED, font=(FONT, 9),
                       text=sub, tags="graph")
         stats = self.algo.stats(self.frames, self.k, done, self.path, self.total)
-        sx = self.cw - 40 - 124 * len(stats)
+        sx = self.cw - 28 - 112 * len(stats)
         for i, (lab, val) in enumerate(stats):
-            x = sx + i * 124
-            c.create_text(x, 40, anchor="nw", text=val, fill=INK,
-                          font=(FONT, 17, "bold"), tags="graph")
-            c.create_text(x, 68, anchor="nw", text=lab, fill=MUTED,
-                          font=(FONT, 9), tags="graph")
+            x = sx + i * 112
+            c.create_text(x, 16, anchor="nw", text=val, fill=INK,
+                          font=(FONT, 14, "bold"), tags="graph")
+            c.create_text(x, 40, anchor="nw", text=lab, fill=MUTED,
+                          font=(FONT, 8), tags="graph")
 
         # aristas
         items = []
@@ -943,7 +957,7 @@ class App(tk.Tk):
         else:
             msg, col = "", MUTED
         if msg:
-            c.create_text(self.cw / 2, self.ch - 66, text=msg, fill=col,
+            c.create_text(self.cw / 2, self.ch - 46, text=msg, fill=col,
                           font=self.f_msg, tags="graph")
 
     # ---------- barra inferior (controles) ----------

@@ -8,7 +8,6 @@
 <br>
 
 ![Python](https://img.shields.io/badge/Python-3.10+-b8ead6?style=for-the-badge&logo=python&logoColor=1e3a30)
-![Grafos](https://img.shields.io/badge/Grafos-30%20nodos-a7ddc6?style=for-the-badge&logoColor=1e3a30)
 ![Algoritmos](https://img.shields.io/badge/Algoritmos-4-d9f3e6?style=for-the-badge&logoColor=1e3a30)
 
 </div>
